@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-^xuuad0o!^pil1g0(i1a#f((p%oi1kkz1c(ttkk^g60%z$+eny
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["https://smtp-send-production.up.railway.app/"]
 
 
 # Application definition
