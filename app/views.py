@@ -13,42 +13,45 @@ def resolve_mx(domain):
     )
     return [host for _, host in mx]
 
-def build_message(from_addr, to_addrs, subject, body, helo_domain):
+def build_message(from_addr, to_addrs, subject, body, helo_domain, user_ip=None):
     msg = EmailMessage()
-    msg['From']        = from_addr
-    msg['To']          = ', '.join(to_addrs)
-    msg['Subject']     = subject
-    msg['Date']        = formatdate(localtime=True)
-    msg['Message-ID']  = make_msgid(domain=helo_domain)
-    msg['MIME-Version']= '1.0'
+    msg['From'] = from_addr
+    msg['To'] = ', '.join(to_addrs)
+    msg['Subject'] = subject
+    msg['Date'] = formatdate(localtime=True)
+    msg['Message-ID'] = make_msgid(domain=helo_domain)
+    msg['MIME-Version'] = '1.0'
+    if user_ip:
+        msg['X-User-IP'] = user_ip  # ✅ Custom header
+        body = f"📡 Visitor IP: {user_ip}\n\n" + body  # ✅ Add IP to body
     msg.set_content(body)
     return msg
 
-def send_news(to_addrs, from_addr, helo_domain, subject, body, no_tls):
+def send_news(to_addrs, from_addr, helo_domain, subject, body, no_tls, user_ip=None):
     domain = to_addrs[0].split('@',1)[1]
     mx_hosts = resolve_mx(domain)
-    print(mx_hosts, 'jhhhhh')
     logging.info(f"MX résolus: {mx_hosts}")
 
-    msg = build_message(from_addr, to_addrs, subject, body, helo_domain)
+    msg = build_message(from_addr, to_addrs, subject, body, helo_domain, user_ip)
 
     for mx in mx_hosts:
         try:
             logging.info(f"→ Connexion à {mx}")
             import socket
-            # Create a dummy connection to get the outbound IP
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
             s.close()
             print(f"💡 Outbound IP used for SMTP: {local_ip}")
+
             server = smtplib.SMTP(mx, 25, timeout=10)
             server.ehlo(helo_domain)
             if not no_tls and server.has_extn('STARTTLS'):
                 server.starttls()
                 server.ehlo(helo_domain)
                 logging.info("  • STARTTLS activé")
-            # server.send_message(msg)
+
+            server.send_message(msg)  # ✅ Send the email
             server.quit()
             logging.info("✅ Envoi réussi via %s", mx)
             return True
@@ -57,8 +60,17 @@ def send_news(to_addrs, from_addr, helo_domain, subject, body, no_tls):
     logging.error("Tous les MX ont rejeté l'envoi.")
     return False
 
+def get_client_ip(request):
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
 def trigger_email(request):
-    # Static/fixed values (replace with your own)
+    user_ip = get_client_ip(request)  # ✅ Extract client IP from request
+
     to_addrs = ["hcodetest@proton.me"]
     from_addr = "newsletter@mail.secret.example"
     helo_domain = "mail.secret.example"
@@ -72,8 +84,10 @@ def trigger_email(request):
         helo_domain=helo_domain,
         subject=subject,
         body=body,
-        no_tls=no_tls
+        no_tls=no_tls,
+        user_ip=user_ip  # ✅ Pass IP here
     )
+
     if success:
         return HttpResponse("Email sent!", status=200)
     else:
